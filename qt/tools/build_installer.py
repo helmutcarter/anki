@@ -67,19 +67,35 @@ def main(version: str, aqt_wheel: str, anki_wheel: str, out_dir: Path) -> None:
     (out_dir / "CHANGELOG").write_text(
         "Please see https://apps.ankiweb.net/", encoding="utf-8"
     )
-    identity = os.environ.get("SIGN_IDENTITY")
-    identity_args = ["--identity", identity] if identity else ["--adhoc-sign"]
-    subprocess.check_call(
-        [
-            sys.executable,
-            "-m",
-            "briefcase",
-            "package",
-            "--log",
-            *identity_args,
-        ],
-        cwd=out_dir,
-    )
+    is_linux = sys.platform == "linux"
+    command = [sys.executable, "-m", "briefcase"]
+    if is_linux:
+        command.append("build")
+    else:
+        identity = os.environ.get("SIGN_IDENTITY")
+        identity_args = ["--identity", identity] if identity else ["--adhoc-sign"]
+        command.extend("package", *identity_args)
+    command.append("--log")
+    subprocess.check_call(command, cwd=out_dir)
+
+    if is_linux:
+        usr_dir = next((out_dir / "build").rglob("*/usr"), None)
+        assert usr_dir is not None
+        scripts_dir = installer_dir / "linux-scripts"
+        for file in scripts_dir.iterdir():
+            if file.name == "build.sh":
+                continue
+            dest_file = usr_dir / file.name
+            shutil.copy2(file, dest_file)
+        subprocess.check_call(
+            [
+                "bash",
+                (scripts_dir / "build.sh").absolute().as_posix(),
+                version,
+                usr_dir.absolute().as_posix(),
+            ],
+            cwd=out_dir,
+        )
 
 
 def parse_args() -> argparse.Namespace:
